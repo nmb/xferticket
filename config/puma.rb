@@ -20,4 +20,3 @@ bind "unix://#{shared_dir}/sockets/puma.sock"
 pidfile "#{shared_dir}/puma.pid"
 state_path "#{shared_dir}/puma.state"
 
-daemonize false

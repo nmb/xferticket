@@ -9,8 +9,10 @@ require "minitar"
 require "securerandom"
 require "logger"
 require 'pp'
+require 'sequel'
+require 'sqlite3'
 
+require "xferticket/application.rb"
 require "xferticket/directoryuser.rb"
 require "xferticket/ticket.rb"
-require "xferticket/application.rb"
 

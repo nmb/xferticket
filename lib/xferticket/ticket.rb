@@ -1,28 +1,17 @@
-require 'dm-core'
-require 'dm-timestamps'
-require 'dm-validations'
-require 'dm-aggregates'
-require 'dm-migrations'
+# frozen_string_literal: true
+
+require 'sequel'
 require 'ostruct'
 require 'sanitize'
 require 'bcrypt'
 
 module XferTickets
   # Tickets 
-  class Ticket
-    include DataMapper::Resource
+  class Ticket < Sequel::Model
+    #Sequel::Model.plugin :timestamps, force: true, :update_on_create => true
 
-    property :id, Serial
-    property :created_at, DateTime
-    property :userid, String
-    property :title, String
-    property :uuid, String, :unique => true, :required => true
-    property :salt, String
-    property :pwd, Text
-    property :allow_uploads, Boolean, :default => true
-
-    before :destroy do
-    puts "Deleting: #{self.uuid}"
+    def before_destroy 
+      puts "Deleting: #{self.uuid}"
       # replace w/ delete dir
       begin
         self.set_allow_uploads(true)
@@ -32,17 +21,17 @@ module XferTickets
       end
     end
 
-    def initialize(params, user)
-      self.userid = user
-      self.title = Sanitize.clean(params[:title])
+    def before_create
       self.uuid = SecureRandom.urlsafe_base64(n=32)
-      self.pwd = nil
       Dir.mkdir(self.directory, 0777)
       File.chmod(0777, self.directory)
+      self.created_at ||= Time.now
+      self.updated_at ||= self.created_at
+      super
     end
 
     def expirydate
-      return self.created_at + XferTickets::Application.settings.expiration_time
+      return self.created_at + XferTickets::Application.settings.expiration_time * 24 * 60 * 60
     end
 
     def directory

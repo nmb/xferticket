@@ -44,6 +44,10 @@ Create a directory where xferticket is storing files:
 
     mkdir /tmp/xferticket
 
+Create database:
+
+    bundle exec rake db:migrate
+
 Start local server:
 
     bundle exec foreman start

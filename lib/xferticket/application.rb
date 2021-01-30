@@ -1,16 +1,13 @@
-require 'dm-core'
-require 'dm-timestamps'
-require 'dm-validations'
-require 'dm-aggregates'
-require 'dm-migrations'
+require 'sequel'
 require 'ostruct'
 require "sinatra/config_file"
 require 'sys/filesystem'
+require 'irb'
 
 
 module XferTickets
   class Application < Sinatra::Base
-
+    #register Sinatra::SequelExtension
     register Sinatra::ConfigFile
 
     # This is to enable streaming tar:
@@ -34,9 +31,8 @@ module XferTickets
         :repo => 'https://github.com/NBISweden/xferticket',
       )
 
-      DataMapper.setup(:default, (ENV["DATABASE_URL"] || "sqlite3:///#{File.expand_path(File.dirname(__FILE__))}/#{Sinatra::Base.environment}.db"))
-      DataMapper.finalize
-      DataMapper.auto_upgrade!
+      DB = Sequel.sqlite((ENV["DATABASE_URL"] || "#{XferTickets::ROOT}/#{Sinatra::Base.environment}.db"))
+      Sequel::Model.plugin :timestamps
 
     end
 
@@ -46,8 +42,7 @@ module XferTickets
       exit 1
     end
 
-    config_file '../../config/config.yml'
-
+    config_file "#{XferTickets::ROOT}/config/config.yml"
     # refuse to run as root
     if Process.uid == 0
       STDERR.puts 'Please do not run this as root.' 
@@ -83,7 +78,7 @@ module XferTickets
     unless scheduler.down?
       scheduler.every '60s' do
         Ticket.all.each do |t|
-          if(t.created_at + settings.expiration_time < DateTime.now)
+          if(Time.now > t.expirydate)
             settings.logger.info "Deleting expired ticket #{t.uuid}"
             t.destroy
           end
@@ -118,7 +113,7 @@ module XferTickets
 
     # root page
     get "/" do
-      @tickets = Ticket.all(:userid => session[:userid]) if session[:userid]
+      @tickets = Ticket.where(:userid => session[:userid]) if session[:userid]
       erb :root
     end
 
@@ -152,7 +147,7 @@ module XferTickets
 
     # password unlock
     post "/tickets/:uuid/unlock?" do |u|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
        if @ticket.check_password(params["password"])
          session[u] = true
@@ -177,14 +172,14 @@ module XferTickets
     post "/tickets" do
       protected!
       settings.logger.info "New ticket by #{session[:userid]}"
-      t = Ticket.new(params, session[:userid] )
+      t = Ticket.new({title: Sanitize.clean(params[:title]), userid: session[:userid] })
       t.save
       redirect to('/')
     end
 
     # delete ticket
     delete "/tickets/:uuid/?" do |u|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       ownerprotected!(@ticket)
       @ticket.destroy 
@@ -200,7 +195,7 @@ module XferTickets
     # view ticket
     get "/tickets/:uuid/?" do |u|
       #not_found if u.nil?
-      @ticket = Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       pwdprotected!(@ticket, params['password'])
       erb :ticket
@@ -208,14 +203,14 @@ module XferTickets
 
     # view unlock ticket
     get "/tickets/:uuid/unlock/?" do |u|
-      @ticket = Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       erb :unlock
     end
 
     # set allow_uploads
     patch "/tickets/:uuid/allow_uploads" do |u|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       ownerprotected!(@ticket)
       @ticket.set_allow_uploads(params['allow_uploads'] == "true")
       @ticket.save
@@ -224,7 +219,7 @@ module XferTickets
 
     # set password
     patch "/tickets/:uuid/set_password?" do |u|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       ownerprotected!(@ticket)
       @ticket.set_password(params['password'])
       @ticket.save
@@ -233,7 +228,7 @@ module XferTickets
 
     # upload file
     post "/tickets/:uuid/upload/?" do |u|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       halt 401, 'not allowed' unless @ticket.allow_uploads
       pwdprotected!(@ticket, params['password'])
@@ -250,7 +245,7 @@ module XferTickets
     end
 
     put "/tickets/:uuid/upload/:fn" do |u,fn|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       halt 401, 'not allowed' unless @ticket.allow_uploads
       pwdprotected!(@ticket, params['password'])
@@ -262,7 +257,7 @@ module XferTickets
 
     # download file
     get "/tickets/:uuid/:f/download/?" do |u,f|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       pwdprotected!(@ticket, params['password'])
       fn = File.join(@ticket.directory, f)
@@ -277,7 +272,7 @@ module XferTickets
 
     # download archive
     get "/tickets/:uuid/downloadarchive/?" do |u|
-      @ticket = XferTickets::Ticket.first(:uuid => u)
+      @ticket = Ticket.where(:uuid => u).first
       halt 404, 'not found' unless @ticket
       pwdprotected!(@ticket, params['password'])
       attachment("archive.tar")
